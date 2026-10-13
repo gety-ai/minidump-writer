@@ -7,7 +7,8 @@ use {
             CloseHandle, EXCEPTION_POINTERS, EXCEPTION_RECORD, FALSE, GetCurrentProcess,
             GetCurrentThreadId, GetThreadContext, HANDLE, MINIDUMP_EXCEPTION_INFORMATION,
             MINIDUMP_USER_STREAM, MINIDUMP_USER_STREAM_INFORMATION, MiniDumpWriteDump,
-            MinidumpType, OpenProcess, OpenThread, PROCESS_ALL_ACCESS, ResumeThread,
+            MinidumpType, OpenProcess, OpenThread, PROCESS_ACCESS_RIGHTS, PROCESS_DUP_HANDLE,
+            PROCESS_QUERY_INFORMATION, PROCESS_VM_READ, ResumeThread,
             STATUS_NONCONTINUABLE_EXCEPTION, SuspendThread, THREAD_GET_CONTEXT,
             THREAD_QUERY_INFORMATION, THREAD_SUSPEND_RESUME, capture_context,
         },
@@ -164,9 +165,9 @@ impl MinidumpWriter {
         let (crashing_process, is_external_process) = unsafe {
             if pid != std::process::id() {
                 let proc = OpenProcess(
-                    PROCESS_ALL_ACCESS, // desired access
-                    FALSE,              // inherit handles
-                    pid,                // pid
+                    required_process_access(minidump_type), // desired access
+                    FALSE,                                  // inherit handles
+                    pid,                                    // pid
                 );
 
                 if proc == 0 {
@@ -299,6 +300,20 @@ impl MinidumpWriter {
 
         Some(breakpad_info)
     }
+}
+
+/// The process access rights `MiniDumpWriteDump` needs for `minidump_type`.
+///
+/// Only what the API documents as required is requested: security products
+/// commonly deny or strip handles to other processes that ask for more (write,
+/// thread creation, ...), which turns a dump that only reads into a failure.
+/// Threads are opened by `MiniDumpWriteDump` itself with their own rights.
+fn required_process_access(minidump_type: Option<MinidumpType>) -> PROCESS_ACCESS_RIGHTS {
+    let mut access = PROCESS_QUERY_INFORMATION | PROCESS_VM_READ;
+    if minidump_type.is_some_and(|ty| ty.contains(MinidumpType::WithHandleData)) {
+        access |= PROCESS_DUP_HANDLE;
+    }
+    access
 }
 
 impl Drop for MinidumpWriter {

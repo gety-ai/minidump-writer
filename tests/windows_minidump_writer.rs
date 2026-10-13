@@ -2,11 +2,12 @@
 
 use {
     common::start_child_and_return,
+    memmap2::Mmap,
     minidump::{
-        CrashReason, Minidump, MinidumpBreakpadInfo, MinidumpMemoryList, MinidumpSystemInfo,
-        MinidumpThreadList,
+        CrashReason, Minidump, MinidumpBreakpadInfo, MinidumpHandleDataStream, MinidumpMemoryList,
+        MinidumpSystemInfo, MinidumpThreadList,
     },
-    minidump_writer::minidump_writer::MinidumpWriter,
+    minidump_writer::{MinidumpType, minidump_writer::MinidumpWriter},
 };
 
 mod common;
@@ -130,6 +131,38 @@ fn dump_specific_thread() {
 /// via stdout
 #[test]
 fn dump_external_process() {
+    let md = dump_external_process_with(None);
+
+    let _: MinidumpThreadList = md.get_stream().expect("Couldn't find MinidumpThreadList");
+    let _: MinidumpMemoryList = md.get_stream().expect("Couldn't find MinidumpMemoryList");
+    let _: MinidumpSystemInfo = md.get_stream().expect("Couldn't find MinidumpSystemInfo");
+
+    let crash_reason = get_crash_reason(&md);
+
+    assert_eq!(
+        crash_reason,
+        CrashReason::from_windows_code(EXCEPTION_ILLEGAL_INSTRUCTION as u32)
+    );
+}
+
+/// Ensures that the external process handle is opened with the extra rights a
+/// dump type needs: handle data requires the handles of the dumped process to
+/// be duplicated into ours.
+#[test]
+fn dump_external_process_with_handle_data() {
+    let md = dump_external_process_with(Some(MinidumpType::WithHandleData));
+
+    let handles: MinidumpHandleDataStream = md
+        .get_stream()
+        .expect("Couldn't find MinidumpHandleDataStream");
+    assert!(
+        handles.iter().next().is_some(),
+        "handle data stream is empty"
+    );
+    let _: MinidumpThreadList = md.get_stream().expect("Couldn't find MinidumpThreadList");
+}
+
+fn dump_external_process_with(minidump_type: Option<MinidumpType>) -> Minidump<'static, Mmap> {
     use std::io::BufRead;
 
     let mut child = start_child_and_return(&[&format!("{:x}", EXCEPTION_ILLEGAL_INSTRUCTION)]);
@@ -167,21 +200,10 @@ fn dump_external_process() {
 
     // SAFETY: We keep the process we are dumping alive until the minidump is written
     // and the test process keep the pointers it sent us alive until it is killed
-    MinidumpWriter::dump_crash_context(&crash_context, None, tmpfile.as_file_mut())
+    MinidumpWriter::dump_crash_context(&crash_context, minidump_type, tmpfile.as_file_mut())
         .expect("failed to write minidump");
 
     child.kill().expect("failed to kill child");
 
-    let md = Minidump::read_path(tmpfile.path()).expect("failed to read minidump");
-
-    let _: MinidumpThreadList = md.get_stream().expect("Couldn't find MinidumpThreadList");
-    let _: MinidumpMemoryList = md.get_stream().expect("Couldn't find MinidumpMemoryList");
-    let _: MinidumpSystemInfo = md.get_stream().expect("Couldn't find MinidumpSystemInfo");
-
-    let crash_reason = get_crash_reason(&md);
-
-    assert_eq!(
-        crash_reason,
-        CrashReason::from_windows_code(EXCEPTION_ILLEGAL_INSTRUCTION as u32)
-    );
+    Minidump::read_path(tmpfile.path()).expect("failed to read minidump")
 }
