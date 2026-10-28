@@ -83,6 +83,7 @@ pub struct MinidumpWriterConfig {
     blamed_thread: Pid,
     minidump_size_limit: Option<u64>,
     skip_stacks_if_mapping_unreferenced: bool,
+    keep_threads_without_context: bool,
     principal_mapping_address: Option<usize>,
     user_mapping_list: MappingList,
     app_memory: AppMemoryList,
@@ -113,6 +114,7 @@ pub struct MinidumpWriter {
     pub crashing_thread_context: CrashingThreadContext,
     stop_timeout: Duration,
     pub skip_stacks_if_mapping_unreferenced: bool,
+    keep_threads_without_context: bool,
     principal_mapping_address: Option<usize>,
     pub principal_mapping: Option<MappingInfo>,
     pub blamed_thread: Pid,
@@ -143,6 +145,7 @@ impl MinidumpWriterConfig {
             blamed_thread,
             minidump_size_limit: Default::default(),
             skip_stacks_if_mapping_unreferenced: Default::default(),
+            keep_threads_without_context: false,
             principal_mapping_address: Default::default(),
             user_mapping_list: Default::default(),
             app_memory: Default::default(),
@@ -190,6 +193,14 @@ impl MinidumpWriterConfig {
 
     pub fn sanitize_stack(&mut self) -> &mut Self {
         self.sanitize_stack = true; // Off by default
+        self
+    }
+
+    /// Keeps threads after any failure to read their registers or other thread information.
+    /// Kept entries have empty contexts and stacks; failures are recorded as soft errors.
+    /// This includes missing per-thread status files when inspecting a snapshot child.
+    pub fn keep_threads_without_context(&mut self) -> &mut Self {
+        self.keep_threads_without_context = true;
         self
     }
 
@@ -286,6 +297,7 @@ impl MinidumpWriterConfig {
             crashing_thread_context: self.crashing_thread_context,
             stop_timeout: self.stop_timeout,
             skip_stacks_if_mapping_unreferenced: self.skip_stacks_if_mapping_unreferenced,
+            keep_threads_without_context: self.keep_threads_without_context,
             principal_mapping_address: self.principal_mapping_address,
             principal_mapping: self.principal_mapping,
             blamed_thread: self.blamed_thread,
@@ -564,6 +576,7 @@ impl MinidumpWriter {
     fn suspend_thread(
         process_inspector: &dyn ProcessInspector,
         tid: Pid,
+        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))] keep_threads_without_context: bool,
     ) -> Result<(), WriterError> {
         process_inspector
             .suspend_thread(tid)
@@ -589,7 +602,7 @@ impl MinidumpWriter {
                     skip_thread = regs.esp == 0;
                 }
             } else {
-                skip_thread = true;
+                skip_thread = !keep_threads_without_context;
             }
             if skip_thread {
                 process_inspector
@@ -617,7 +630,12 @@ impl MinidumpWriter {
         // it was part of the seccomp sandbox's trusted code, it is OK to
         // silently drop it from the minidump.
         self.threads.retain(|x| {
-            match Self::suspend_thread(self.process_inspector.as_ref(), x.tid) {
+            match Self::suspend_thread(
+                self.process_inspector.as_ref(),
+                x.tid,
+                #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+                self.keep_threads_without_context,
+            ) {
                 Ok(()) => true,
                 Err(e) => {
                     soft_errors.push(e);

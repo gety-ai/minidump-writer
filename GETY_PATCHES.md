@@ -53,6 +53,24 @@ Upstream `main` at `59aad8d` (2026-10-14), 91 unreleased commits after 0.13.0.
   named entries. Worth proposing upstream.
 - Used by: Gety memory diagnose, DEV-735.
 
+### Keep Linux threads whose contexts are unavailable
+
+- Platform: Linux.
+- Change: add the default-off `MinidumpWriterConfig::keep_threads_without_context`
+  option. Keep threads when general registers cannot be read during suspension;
+  if thread info cannot be read, write empty context and stack descriptors and
+  record a soft error. The shared thread-list path covers x86, x86_64, ARM and
+  AArch64. Default crash-path behavior is unchanged.
+- Why: Gety's snapshot backend has no thread registers: it does not use ptrace
+  or freeze threads. All original thread IDs must still appear in triage dumps.
+  Per-thread status files can also be unavailable in the snapshot child's
+  `/proc` view, so the fallback covers every `ThreadInfoError`, not only
+  register failures.
+- Still needed: upstream drops these threads on x86/x86_64 and treats failure
+  to obtain general registers as a hard error on every supported architecture.
+  Not proposed upstream yet.
+- Used by: Gety memory diagnose, DEV-735.
+
 ## Dropped patches
 
 ### Relax crash-context requirement to 0.7
@@ -62,12 +80,6 @@ Upstream `main` at `59aad8d` (2026-10-14), 91 unreleased commits after 0.13.0.
   `crash-handling` fork moved to the 0.11 line that uses `crash-context` 0.8,
   so there is no longer a second `crash-context` instance to unify. Still
   available on the `crash-context-0.7` branch.
-
-## Planned
-
-- Linux: an opt-in `keep_threads_without_context` option, so Gety's snapshot
-  backend can retain all threads with empty contexts and stacks when registers
-  are unavailable. Gety does not freeze threads or record their registers.
 
 ## Other branches
 

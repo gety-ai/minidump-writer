@@ -185,10 +185,18 @@ impl MinidumpWriter {
                 self.crashing_thread_context =
                     CrashingThreadContext::CrashContext(cpu_section.location());
             } else {
-                let info = self.get_thread_info_by_index(
+                let info = match self.get_thread_info_by_index(
                     idx,
                     soft_errors.subwriter(SectionThreadListError::ThreadInfoSoftErrors),
-                )?;
+                ) {
+                    Ok(info) => info,
+                    Err(error) if self.keep_threads_without_context => {
+                        soft_errors.push(SectionThreadListError::ThreadInfoError(error));
+                        thread_list.set_value_at(buffer, thread, idx)?;
+                        continue;
+                    }
+                    Err(error) => return Err(error.into()),
+                };
                 let max_stack_len =
                     if self.minidump_size_limit.is_some() && idx >= LIMIT_BASE_THREAD_COUNT {
                         extra_thread_stack_len
