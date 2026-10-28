@@ -41,6 +41,18 @@ Upstream `main` at `59aad8d` (2026-10-14), 91 unreleased commits after 0.13.0.
   Not proposed upstream yet.
 - Used by: Gety memory diagnose, DEV-735.
 
+### Index Linux thread names independently of unnamed threads
+
+- Platform: Linux.
+- Change: index only named threads when filling the thread-names stream.
+  Output is unchanged when every thread has a name.
+- Why: missing names otherwise cause out-of-bounds writes, corrupting the
+  stream or panicking. Saved snapshot thread sets routinely include vanished
+  threads whose names cannot be read.
+- Still needed: upstream indexes the full thread list after allocating only
+  named entries. Worth proposing upstream.
+- Used by: Gety memory diagnose, DEV-735.
+
 ## Dropped patches
 
 ### Relax crash-context requirement to 0.7
