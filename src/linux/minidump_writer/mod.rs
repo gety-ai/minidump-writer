@@ -229,6 +229,15 @@ impl MinidumpWriterConfig {
         self
     }
 
+    /// Chooses the process backend before dump initialization starts.
+    pub fn set_process_backend<B: process_backend::Backend + 'static>(
+        &mut self,
+        backend: B,
+    ) -> &mut Self {
+        self.process_inspector = Box::new(backend);
+        self
+    }
+
     /// Chooses where the `ModuleListStream` is sourced from.
     pub fn set_module_list_source(&mut self, module_list_source: ModuleListSource) -> &mut Self {
         self.module_list_source = module_list_source;

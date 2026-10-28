@@ -18,6 +18,7 @@ cfg_if::cfg_if! {
         }
 
         pub use linux::*;
+        pub use process_backend;
     } else if #[cfg(target_os = "windows")] {
         mod windows;
 

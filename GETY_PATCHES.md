@@ -30,6 +30,17 @@ Upstream `main` at `59aad8d` (2026-10-14), 91 unreleased commits after 0.13.0.
   requests `PROCESS_ALL_ACCESS`. Not proposed upstream yet.
 - Used by: Gety crash reporter (gety PR #1288).
 
+### Allow a custom Linux process backend
+
+- Platform: Linux.
+- Change: expose `MinidumpWriterConfig::set_process_backend` to choose the
+  backend before initialization, and re-export `process_backend`.
+- Why: Gety's collector supplies a backend that reads snapshot memory and
+  preserves the original thread list without ptrace or freezing threads.
+- Still needed: upstream only exposes built-in local and remote backends.
+  Not proposed upstream yet.
+- Used by: Gety memory diagnose, DEV-735.
+
 ## Dropped patches
 
 ### Relax crash-context requirement to 0.7
@@ -42,10 +53,9 @@ Upstream `main` at `59aad8d` (2026-10-14), 91 unreleased commits after 0.13.0.
 
 ## Planned
 
-- Linux: a public `MinidumpWriter::set_process_backend` entry point plus a
-  re-export of `process_backend`, so a caller can supply its own
-  `process_backend::Backend` (registers recorded at freeze time, memory read
-  from a snapshot). Needed by Gety's memory diagnose feature.
+- Linux: an opt-in `keep_threads_without_context` option, so Gety's snapshot
+  backend can retain all threads with empty contexts and stacks when registers
+  are unavailable. Gety does not freeze threads or record their registers.
 
 ## Other branches
 
