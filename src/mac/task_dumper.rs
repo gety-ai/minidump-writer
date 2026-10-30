@@ -194,8 +194,12 @@ impl TaskDumper {
         // the string is. And we don't know how long the string is, until we've read
         // the memory!  So, we'll try to read kMaxStringLength bytes
         // (or as many bytes as we can until we reach the end of the vm region).
-        let get_region_size = || -> Result<u64, TaskDumpError> {
+        let get_region_size = || -> Result<Option<u64>, TaskDumpError> {
             let region = self.get_vm_region(addr)?;
+
+            if (region.info.protection & mach2::vm_prot::VM_PROT_READ) == 0 {
+                return Ok(None);
+            }
 
             let mut size_to_end = region.range.end - addr;
 
@@ -205,15 +209,17 @@ impl TaskDumper {
             if size_to_end < 4 * 1024 {
                 let maybe_adjacent = self.get_vm_region(region.range.end)?;
 
-                if maybe_adjacent.range.start == region.range.end {
+                if maybe_adjacent.range.start == region.range.end
+                    && (maybe_adjacent.info.protection & mach2::vm_prot::VM_PROT_READ) != 0
+                {
                     size_to_end += maybe_adjacent.range.end - maybe_adjacent.range.start;
                 }
             }
 
-            Ok(size_to_end)
+            Ok(Some(size_to_end))
         };
 
-        if let Ok(size_to_end) = get_region_size() {
+        if let Ok(Some(size_to_end)) = get_region_size() {
             let mut bytes = self.read_task_memory(
                 addr,
                 std::cmp::min(size_to_end as usize, expected_size.unwrap_or(8 * 1024)),

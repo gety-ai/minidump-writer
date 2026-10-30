@@ -71,6 +71,19 @@ Upstream `main` at `59aad8d` (2026-10-14), 91 unreleased commits after 0.13.0.
   Not proposed upstream yet.
 - Used by: Gety memory diagnose, DEV-735.
 
+### Keep macOS string reads within readable regions
+
+- Platform: macOS.
+- Change: require `VM_PROT_READ` on the starting region and any contiguous
+  region included by `TaskDumper::read_string`.
+- Why: a corpse snapshot can place the main executable's path at the end of
+  its stack mapping, followed by an unreadable guard. Reading across the guard
+  failed and silently lost the module name. The shared dyld pathname reader
+  now preserves it.
+- Still needed: upstream extends short string reads without checking region
+  protections. Worth proposing upstream.
+- Used by: Gety memory diagnose, DEV-735.
+
 ## Dropped patches
 
 ### Relax crash-context requirement to 0.7

@@ -6,6 +6,47 @@ use {
     std::fmt::Write,
 };
 
+#[test]
+fn reads_string_before_unreadable_region() {
+    let page_size = usize::try_from(unsafe { libc::sysconf(libc::_SC_PAGESIZE) })
+        .expect("unable to retrieve page size");
+    let mut mapping = memmap2::MmapMut::map_anon(page_size * 2).expect("unable to map two pages");
+    let expected = "module path before guard page";
+    let offset = page_size - expected.len() - 1;
+    mapping[offset..page_size - 1].copy_from_slice(expected.as_bytes());
+    let addr = unsafe { mapping.as_ptr().add(offset) } as u64;
+    let guard = unsafe { mapping.as_mut_ptr().add(page_size) };
+    assert_eq!(
+        unsafe { libc::mprotect(guard.cast(), page_size, libc::PROT_NONE) },
+        0,
+        "unable to protect guard page"
+    );
+
+    let dumper = TaskDumper::new(unsafe { mach2::traps::mach_task_self() });
+    let region = dumper
+        .get_vm_region(addr)
+        .expect("unable to find string region");
+    assert_eq!(region.range.end, guard as u64);
+    let next = dumper
+        .get_vm_region(region.range.end)
+        .expect("unable to find guard region");
+    assert_eq!(next.range.start, region.range.end);
+    assert_eq!(next.info.protection & mach2::vm_prot::VM_PROT_READ, 0);
+
+    assert_eq!(
+        dumper
+            .read_string(addr, None)
+            .expect("unable to read string"),
+        Some(expected.to_owned())
+    );
+    assert_eq!(
+        dumper
+            .read_string(guard as u64, None)
+            .expect("unreadable region should be skipped"),
+        None
+    );
+}
+
 fn call_otool(args: &[&str]) -> String {
     let mut cmd = std::process::Command::new("otool");
     cmd.args(args);
